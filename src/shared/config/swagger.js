@@ -19,8 +19,12 @@ const options = {
         description: 'Servidor de desarrollo'
       },
       {
-        url: 'http://localhost:80',
+        url: '/',
         description: 'Servidor de producción'
+      },
+      {
+        url: 'http://48.216.242.243:3000',
+        description: 'Servidor de pruebas'
       }
     ],
     components: {
