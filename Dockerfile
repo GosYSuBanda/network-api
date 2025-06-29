@@ -4,17 +4,16 @@ FROM node:22-alpine
 RUN mkdir -p /usr/src/app
 WORKDIR /usr/src/app
 
-# Copia package.json y package-lock.json (si existe)
 COPY package*.json ./
 
-# Instala solo dependencias de producción
+# Instalar solo dependencias de producción
 RUN npm ci --only=production
 
-# Copia el resto del código
+# Copiar el resto del código
 COPY . .
 
-# Expone el puerto configurado en .env
+# Exponer el puerto configurado en .env
 EXPOSE 3000
 
-# Levanta la aplicación
+# Levantar la aplicación
 CMD ["npm", "start"]
