@@ -1,0 +1,26 @@
+services:
+    mongo:
+      image: mongodb/mongodb-enterprise-server:latest
+      container_name: mongo
+      ports:
+        - "27017:27017"
+      restart: unless-stopped
+      volumes:
+        - mongodb_data:/data/db
+      
+  
+    node-app:
+      build: .
+      container_name: network-api
+      ports:
+        - "80:3000"
+      env_file:
+        - .env
+      depends_on:
+        - mongo
+      restart: always
+
+
+volumes:
+  mongodb_data:
+    driver: local
