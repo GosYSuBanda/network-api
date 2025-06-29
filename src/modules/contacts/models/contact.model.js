@@ -27,7 +27,7 @@ contactSchema.index({ followerId: 1, followeeId: 1 }, { unique: true });
 // Método estático para seguir a un usuario
 contactSchema.statics.follow = async function(followerId, followeeId) {
   // Validar que no se siga a sí mismo
-  if (followerId.equals(followeeId)) {
+  if (followerId.toString() === followeeId.toString()) {
     throw new Error('No puedes seguirte a ti mismo');
   }
   
