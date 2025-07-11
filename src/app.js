@@ -84,9 +84,14 @@ app.use(limiter);
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
-// Middleware global
+// Configuración de CORS - Permitir todos los orígenes
 app.use(cors({
-    origin: '*',
+  origin: '*',
+  credentials: false, // Cambiar a false cuando origin es '*'
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Length', 'X-Total-Count'],
+  maxAge: 86400 // 24 horas
 }));
 
 app.use(express.json({ limit: '10mb' }));
