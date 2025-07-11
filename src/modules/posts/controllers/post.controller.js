@@ -8,6 +8,11 @@ class PostController {
    */
   async createPost(req, res) {
     try {
+      console.log('📝 Iniciando creación de post...');
+      console.log('Usuario autenticado:', req.user?.userId);
+      console.log('Datos recibidos:', req.body);
+      console.log('Archivos subidos:', req.uploadedFiles?.length || 0);
+
       const postData = {
         ...req.body,
         authorId: req.user.userId // Usar ID del usuario autenticado
@@ -16,9 +21,14 @@ class PostController {
       // Agregar archivos multimedia si fueron subidos
       if (req.uploadedFiles && req.uploadedFiles.length > 0) {
         postData.media = req.uploadedFiles;
+        console.log('📷 Archivos multimedia agregados:', req.uploadedFiles.length);
       }
       
+      console.log('📋 Datos del post a crear:', postData);
+      
       const post = await postService.createPost(postData);
+      
+      console.log('✅ Post creado exitosamente:', post._id);
       
       res.status(201).json({
         success: true,
@@ -27,6 +37,7 @@ class PostController {
         filesUploaded: req.uploadedFiles ? req.uploadedFiles.length : 0
       });
     } catch (error) {
+      console.error('❌ Error al crear post:', error);
       res.status(400).json({
         success: false,
         message: 'Error al crear post',
@@ -201,7 +212,8 @@ class PostController {
    */
   async addComment(req, res) {
     try {
-      const { userId, comment } = req.body;
+      const { comment } = req.body;
+      const userId = req.user.userId; // Usar ID del usuario autenticado
       const post = await postService.addComment(req.params.id, userId, comment);
 
       res.status(200).json({

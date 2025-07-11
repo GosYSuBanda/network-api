@@ -2,8 +2,12 @@ const express = require('express');
 const postController = require('../controllers/post.controller');
 const { authMiddleware, optionalAuthMiddleware } = require('../../../shared/middleware/auth.middleware');
 const { uploadMultipleFiles, processUploadedFiles } = require('../../../shared/middleware/upload.middleware');
+const { timeoutMiddleware } = require('../../../shared/middleware/timeout.middleware');
 
 const router = express.Router();
+
+// Aplicar timeout a todas las rutas
+router.use(timeoutMiddleware(30000)); // 30 segundos timeout
 
 // Importar rutas de posts de facturas
 const invoicePostRoutes = require('./invoice-post.routes');
@@ -312,7 +316,7 @@ router.get('/', postController.getAllPosts);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/', authMiddleware, uploadMultipleFiles, processUploadedFiles, postController.createPost);
+router.post('/', authMiddleware, uploadMultipleFiles('files'), processUploadedFiles, postController.createPost);
 
 /**
  * @swagger
@@ -409,7 +413,7 @@ router.get('/:id', postController.getPostById);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.put('/:id', authMiddleware, uploadMultipleFiles, processUploadedFiles, postController.updatePost);
+router.put('/:id', authMiddleware, uploadMultipleFiles('files'), processUploadedFiles, postController.updatePost);
 
 /**
  * @swagger

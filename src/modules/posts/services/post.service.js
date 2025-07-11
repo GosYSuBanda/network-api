@@ -10,19 +10,32 @@ class PostService {
    */
   async createPost(postData) {
     try {
+      console.log('🔧 Servicio: Iniciando creación de post');
+      console.log('📋 Datos recibidos en servicio:', postData);
+      
       // Verificar que el autor existe
       const author = await User.findById(postData.authorId);
       if (!author) {
+        console.error('❌ Autor no encontrado:', postData.authorId);
         throw new Error('Autor no encontrado');
       }
 
+      console.log('✅ Autor encontrado:', author.firstName, author.lastName);
+
       const post = new Post(postData);
+      console.log('📝 Post creado en memoria, guardando...');
+      
       await post.save();
+      console.log('💾 Post guardado en base de datos');
       
       // Popular referencias antes de devolver
+      console.log('🔄 Populando referencias...');
       await post.populateReferences();
+      console.log('✅ Referencias populadas exitosamente');
+      
       return post;
     } catch (error) {
+      console.error('❌ Error en createPost servicio:', error);
       throw error;
     }
   }

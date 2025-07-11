@@ -198,11 +198,23 @@ postSchema.statics.getFeedPosts = function(limit = 10, skip = 0) {
 };
 
 // Transformar JSON response
-postSchema.set('toJSON', {
-  virtuals: true,
-  transform: function(doc, ret) {
-    delete ret.__v;
-    return ret;
+postSchema.methods.toJSON = function() {
+  const obj = this.toObject();
+  
+  // Agregar contadores virtuales
+  obj.reactionCount = this.reactionCount;
+  obj.commentCount = this.commentCount;
+  
+  return obj;
+};
+
+// Middleware pre-save para validación
+postSchema.pre('save', function(next) {
+  // Validar que si es post de factura, tenga invoiceId
+  if (this.postType === 'invoice' && !this.invoiceId) {
+    next(new Error('Posts de tipo invoice requieren invoiceId'));
+  } else {
+    next();
   }
 });
 

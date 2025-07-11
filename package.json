@@ -5,7 +5,10 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "node src/app.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "seed": "node src/shared/scripts/seed.js run",
+    "seed:status": "node src/shared/scripts/seed.js status",
+    "seed:help": "node src/shared/scripts/seed.js"
   },
   "keywords": [
     "fintech",

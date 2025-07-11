@@ -63,60 +63,84 @@ const handleUploadError = (error, req, res, next) => {
  * Middleware para subir archivos múltiples (imágenes + documentos)
  */
 const uploadMultipleFiles = (fieldName = 'files') => {
-  return [
-    uploadFiles.array(fieldName, 8), // Máximo 8 archivos
-    handleUploadError
-  ];
+  return (req, res, next) => {
+    uploadFiles.array(fieldName, 8)(req, res, (err) => {
+      if (err) {
+        return handleUploadError(err, req, res, next);
+      }
+      next();
+    });
+  };
 };
 
 /**
  * Middleware para subir solo imágenes
  */
 const uploadMultipleImages = (fieldName = 'images') => {
-  return [
-    uploadImages.array(fieldName, 5), // Máximo 5 imágenes
-    handleUploadError
-  ];
+  return (req, res, next) => {
+    uploadImages.array(fieldName, 5)(req, res, (err) => {
+      if (err) {
+        return handleUploadError(err, req, res, next);
+      }
+      next();
+    });
+  };
 };
 
 /**
  * Middleware para subir solo documentos
  */
 const uploadMultipleDocuments = (fieldName = 'documents') => {
-  return [
-    uploadDocuments.array(fieldName, 3), // Máximo 3 documentos
-    handleUploadError
-  ];
+  return (req, res, next) => {
+    uploadDocuments.array(fieldName, 3)(req, res, (err) => {
+      if (err) {
+        return handleUploadError(err, req, res, next);
+      }
+      next();
+    });
+  };
 };
 
 /**
  * Middleware para subir archivo único
  */
 const uploadSingleFile = (fieldName = 'file') => {
-  return [
-    uploadFiles.single(fieldName),
-    handleUploadError
-  ];
+  return (req, res, next) => {
+    uploadFiles.single(fieldName)(req, res, (err) => {
+      if (err) {
+        return handleUploadError(err, req, res, next);
+      }
+      next();
+    });
+  };
 };
 
 /**
  * Middleware para subir imagen única
  */
 const uploadSingleImage = (fieldName = 'image') => {
-  return [
-    uploadImages.single(fieldName),
-    handleUploadError
-  ];
+  return (req, res, next) => {
+    uploadImages.single(fieldName)(req, res, (err) => {
+      if (err) {
+        return handleUploadError(err, req, res, next);
+      }
+      next();
+    });
+  };
 };
 
 /**
  * Middleware para subir documento único
  */
 const uploadSingleDocument = (fieldName = 'document') => {
-  return [
-    uploadDocuments.single(fieldName),
-    handleUploadError
-  ];
+  return (req, res, next) => {
+    uploadDocuments.single(fieldName)(req, res, (err) => {
+      if (err) {
+        return handleUploadError(err, req, res, next);
+      }
+      next();
+    });
+  };
 };
 
 /**
@@ -127,25 +151,33 @@ const processUploadedFiles = (req, res, next) => {
     if (req.files && req.files.length > 0) {
       // Procesar array de archivos
       req.uploadedFiles = req.files.map(file => ({
-        type: file.mimetype.startsWith('image/') ? 'image' : 
-              ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'].includes(file.mimetype) ? 'document' : 'file',
         url: file.path,
         publicId: file.filename,
+        cloudinaryId: file.filename,
         originalName: file.originalname,
-        size: file.size,
         mimeType: file.mimetype,
+        size: file.size,
+        width: file.width,
+        height: file.height,
+        format: file.format,
+        resourceType: file.mimetype.startsWith('image/') ? 'image' : 
+                      file.mimetype.startsWith('video/') ? 'video' : 'raw',
         uploadedAt: new Date()
       }));
     } else if (req.file) {
       // Procesar archivo único
       req.uploadedFile = {
-        type: req.file.mimetype.startsWith('image/') ? 'image' : 
-              ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'].includes(req.file.mimetype) ? 'document' : 'file',
         url: req.file.path,
         publicId: req.file.filename,
+        cloudinaryId: req.file.filename,
         originalName: req.file.originalname,
-        size: req.file.size,
         mimeType: req.file.mimetype,
+        size: req.file.size,
+        width: req.file.width,
+        height: req.file.height,
+        format: req.file.format,
+        resourceType: req.file.mimetype.startsWith('image/') ? 'image' : 
+                      req.file.mimetype.startsWith('video/') ? 'video' : 'raw',
         uploadedAt: new Date()
       };
     }

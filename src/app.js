@@ -8,7 +8,7 @@ const errorMiddleware = require('./shared/middleware/error.middleware');
 const logger = require('./shared/utils/logger');
 const swaggerUiExpress = require('swagger-ui-express');
 const swaggerSpecs = require('./shared/config/swagger');
-
+const DatabaseSeeder = require('./shared/seeders/index');
 
 // Importar rutas de módulos
 const roleRoutes = require('./modules/roles/routes/role.routes');
@@ -22,8 +22,23 @@ const messageRoutes = require('./modules/messages/routes/message.routes');
 
 const app = express();
 
-// Conectar a la base de datos
-connectDB();
+// Función para inicializar la aplicación
+const initializeApp = async () => {
+  try {
+    // Conectar a la base de datos
+    await connectDB();
+    
+    // Ejecutar seeders
+    await DatabaseSeeder.run();
+    
+  } catch (error) {
+    console.error('❌ Error al inicializar la aplicación:', error);
+    process.exit(1);
+  }
+};
+
+// Inicializar aplicación
+initializeApp();
 
 // Configuración de seguridad
 app.use(helmet({
@@ -126,6 +141,60 @@ app.get('/health', (req, res) => {
     environment: process.env.NODE_ENV || 'development'
   });
 });
+
+/**
+ * @swagger
+ * /db-status:
+ *   get:
+ *     summary: Estado de la base de datos
+ *     description: Verifica el estado y configuración de la base de datos
+ *     tags: [General]
+ *     responses:
+ *       200:
+ *         description: Estado de la base de datos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Estado de la base de datos"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     roles:
+ *                       type: object
+ *                       properties:
+ *                         exists:
+ *                           type: boolean
+ *                         count:
+ *                           type: number
+ *                         roles:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ */
+app.get('/db-status', async (req, res) => {
+  try {
+    const status = await DatabaseSeeder.checkDatabaseStatus();
+    
+    res.status(200).json({
+      success: true,
+      message: 'Estado de la base de datos',
+      data: status
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error al verificar estado de la base de datos',
+      error: error.message
+    });
+  }
+});
 /**
  * @swagger
  * /:
@@ -164,6 +233,7 @@ app.get('/', (req, res) => {
     documentation: '/api-docs',
     endpoints: {
       health: '/health',
+      dbStatus: '/db-status',
       auth: '/api/auth',
       roles: '/api/roles',
       users: '/api/users',
@@ -175,6 +245,7 @@ app.get('/', (req, res) => {
     },
     endpointDetails: {
       health: 'GET /health',
+      dbStatus: 'GET /db-status - Verificar estado de la base de datos',
       auth: {
         'POST /api/auth/register': 'Registrar nuevo usuario',
         'POST /api/auth/login': 'Iniciar sesión',
