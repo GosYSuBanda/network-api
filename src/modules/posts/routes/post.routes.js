@@ -1,7 +1,12 @@
 const express = require('express');
 const postController = require('../controllers/post.controller');
+const { authMiddleware, optionalAuthMiddleware } = require('../../../shared/middleware/auth.middleware');
+const { uploadMultipleFiles, processUploadedFiles } = require('../../../shared/middleware/upload.middleware');
 
 const router = express.Router();
+
+// Importar rutas de posts de facturas
+const invoicePostRoutes = require('./invoice-post.routes');
 
 /**
  * @swagger
@@ -40,7 +45,7 @@ const router = express.Router();
  *                       items:
  *                         $ref: '#/components/schemas/Post'
  */
-router.get('/feed', postController.getFeed);
+router.get('/feed', optionalAuthMiddleware, postController.getFeed);
 
 /**
  * @swagger
@@ -122,7 +127,7 @@ router.get('/stats', postController.getPostStats);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/:id/reactions', postController.addReaction);
+router.post('/:id/reactions', authMiddleware, postController.addReaction);
 
 /**
  * @swagger
@@ -164,7 +169,7 @@ router.post('/:id/reactions', postController.addReaction);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.delete('/:id/reactions', postController.removeReaction);
+router.delete('/:id/reactions', authMiddleware, postController.removeReaction);
 
 /**
  * @swagger
@@ -210,7 +215,7 @@ router.delete('/:id/reactions', postController.removeReaction);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/:id/comments', postController.addComment);
+router.post('/:id/comments', authMiddleware, postController.addComment);
 
 /**
  * @swagger
@@ -256,26 +261,22 @@ router.get('/', postController.getAllPosts);
  * /api/posts:
  *   post:
  *     summary: Crear nueva publicación
- *     description: Crea una nueva publicación en el sistema
+ *     description: Crea una nueva publicación en el sistema con soporte para archivos multimedia
  *     tags: [Posts]
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
  *             type: object
  *             required:
  *               - title
- *               - authorId
  *               - content
  *               - postType
  *             properties:
  *               title:
  *                 type: string
  *                 example: "Mi nueva publicación"
- *               authorId:
- *                 type: string
- *                 example: "507f1f77bcf86cd799439012"
  *               content:
  *                 type: string
  *                 example: "Contenido de la publicación..."
@@ -286,11 +287,12 @@ router.get('/', postController.getAllPosts);
  *               invoiceId:
  *                 type: string
  *                 example: "507f1f77bcf86cd799439013"
- *               images:
+ *               files:
  *                 type: array
  *                 items:
  *                   type: string
- *                 example: ["image1.jpg", "image2.jpg"]
+ *                   format: binary
+ *                 description: Archivos multimedia (máximo 10, 5MB cada uno)
  *     responses:
  *       201:
  *         description: Publicación creada exitosamente
@@ -310,7 +312,7 @@ router.get('/', postController.getAllPosts);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/', postController.createPost);
+router.post('/', authMiddleware, uploadMultipleFiles, processUploadedFiles, postController.createPost);
 
 /**
  * @swagger
@@ -352,7 +354,7 @@ router.get('/:id', postController.getPostById);
  * /api/posts/{id}:
  *   put:
  *     summary: Actualizar publicación
- *     description: Actualiza una publicación existente
+ *     description: Actualiza una publicación existente con soporte para archivos multimedia
  *     tags: [Posts]
  *     parameters:
  *       - in: path
@@ -364,7 +366,7 @@ router.get('/:id', postController.getPostById);
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
  *             type: object
  *             properties:
@@ -377,10 +379,17 @@ router.get('/:id', postController.getPostById);
  *                 enum: [text, invoice, image]
  *               invoiceId:
  *                 type: string
- *               images:
+ *               files:
  *                 type: array
  *                 items:
  *                   type: string
+ *                   format: binary
+ *                 description: Archivos multimedia (máximo 10, 5MB cada uno)
+ *               filesToDelete:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: IDs de archivos a eliminar
  *     responses:
  *       200:
  *         description: Publicación actualizada exitosamente
@@ -400,7 +409,7 @@ router.get('/:id', postController.getPostById);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.put('/:id', postController.updatePost);
+router.put('/:id', authMiddleware, uploadMultipleFiles, processUploadedFiles, postController.updatePost);
 
 /**
  * @swagger
@@ -430,6 +439,45 @@ router.put('/:id', postController.updatePost);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.delete('/:id', postController.deletePost);
+router.delete('/:id', authMiddleware, postController.deletePost);
+
+/**
+ * @swagger
+ * /api/posts/{id}/media/{mediaId}:
+ *   delete:
+ *     summary: Eliminar archivo multimedia específico
+ *     description: Elimina un archivo multimedia específico de una publicación
+ *     tags: [Posts]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID de la publicación
+ *       - in: path
+ *         name: mediaId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID del archivo multimedia
+ *     responses:
+ *       200:
+ *         description: Archivo eliminado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Success'
+ *       404:
+ *         description: Archivo no encontrado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.delete('/:id/media/:mediaId', authMiddleware, postController.deleteMedia);
+
+// Rutas especializadas para posts de facturas
+router.use('/invoice', invoicePostRoutes);
 
 module.exports = router; 

@@ -8,12 +8,23 @@ class PostController {
    */
   async createPost(req, res) {
     try {
-      const post = await postService.createPost(req.body);
+      const postData = {
+        ...req.body,
+        authorId: req.user.userId // Usar ID del usuario autenticado
+      };
+
+      // Agregar archivos multimedia si fueron subidos
+      if (req.uploadedFiles && req.uploadedFiles.length > 0) {
+        postData.media = req.uploadedFiles;
+      }
+      
+      const post = await postService.createPost(postData);
       
       res.status(201).json({
         success: true,
         message: 'Post creado exitosamente',
-        data: post
+        data: post,
+        filesUploaded: req.uploadedFiles ? req.uploadedFiles.length : 0
       });
     } catch (error) {
       res.status(400).json({
@@ -86,14 +97,21 @@ class PostController {
    */
   async updatePost(req, res) {
     try {
-      // Por ahora usamos el authorId del body, en una app real vendría del token JWT
-      const userId = req.body.userId || req.body.authorId;
-      const post = await postService.updatePost(req.params.id, req.body, userId);
+      const userId = req.user.userId; // Obtener del usuario autenticado
+      const updateData = { ...req.body };
+
+      // Agregar archivos multimedia si fueron subidos
+      if (req.uploadedFiles && req.uploadedFiles.length > 0) {
+        updateData.media = req.uploadedFiles;
+      }
+
+      const post = await postService.updatePost(req.params.id, updateData, userId);
 
       res.status(200).json({
         success: true,
         message: 'Post actualizado exitosamente',
-        data: post
+        data: post,
+        filesUploaded: req.uploadedFiles ? req.uploadedFiles.length : 0
       });
     } catch (error) {
       const statusCode = error.message === 'Post no encontrado' ? 404 : 
@@ -112,15 +130,7 @@ class PostController {
    */
   async deletePost(req, res) {
     try {
-      // Por ahora usamos el userId del query, en una app real vendría del token JWT
-      const userId = req.query.userId;
-      if (!userId) {
-        return res.status(400).json({
-          success: false,
-          message: 'Se requiere userId para eliminar el post'
-        });
-      }
-
+      const userId = req.user.userId; // Obtener del usuario autenticado
       const result = await postService.deletePost(req.params.id, userId);
 
       res.status(200).json({
@@ -144,7 +154,8 @@ class PostController {
    */
   async addReaction(req, res) {
     try {
-      const { userId, type } = req.body;
+      const { type } = req.body;
+      const userId = req.user.userId; // Obtener del usuario autenticado
       const result = await postService.addReaction(req.params.id, userId, type);
 
       res.status(200).json({
@@ -167,7 +178,7 @@ class PostController {
    */
   async removeReaction(req, res) {
     try {
-      const { userId } = req.body;
+      const userId = req.user.userId; // Obtener del usuario autenticado
       const result = await postService.removeReaction(req.params.id, userId);
 
       res.status(200).json({
@@ -209,23 +220,33 @@ class PostController {
   }
 
   /**
-   * Obtener feed
+   * Obtener feed inteligente
    * GET /api/posts/feed
    */
   async getFeed(req, res) {
     try {
-      const userId = req.query.userId;
       const options = {
         limit: parseInt(req.query.limit) || 10,
-        skip: parseInt(req.query.skip) || 0
+        skip: parseInt(req.query.skip) || 0,
+        feedType: req.query.feedType || 'following', // 'following', 'discover', 'trending'
+        includeOwnPosts: req.query.includeOwnPosts !== 'false'
       };
 
+      // Obtener userId del usuario autenticado o null si no está autenticado
+      const userId = req.user ? req.user.userId : null;
+      
       const posts = await postService.getFeed(userId, options);
 
       res.status(200).json({
         success: true,
         message: 'Feed obtenido exitosamente',
-        data: posts
+        data: posts,
+        feedType: options.feedType,
+        pagination: {
+          limit: options.limit,
+          skip: options.skip,
+          hasMore: posts.length === options.limit
+        }
       });
     } catch (error) {
       res.status(500).json({
@@ -253,6 +274,31 @@ class PostController {
       res.status(500).json({
         success: false,
         message: 'Error al obtener estadísticas',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Eliminar archivo multimedia específico
+   * DELETE /api/posts/:id/media/:mediaId
+   */
+  async deleteMedia(req, res) {
+    try {
+      const userId = req.user.userId; // Obtener del usuario autenticado
+      const result = await postService.deleteMedia(req.params.id, req.params.mediaId, userId);
+
+      res.status(200).json({
+        success: true,
+        message: result.message
+      });
+    } catch (error) {
+      const statusCode = error.message === 'Post no encontrado' ? 404 : 
+                        error.message === 'Archivo no encontrado' ? 404 :
+                        error.message.includes('permisos') ? 403 : 400;
+      res.status(statusCode).json({
+        success: false,
+        message: 'Error al eliminar archivo',
         error: error.message
       });
     }

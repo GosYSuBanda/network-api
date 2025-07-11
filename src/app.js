@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const connectDB = require('./shared/config/db');
 const errorMiddleware = require('./shared/middleware/error.middleware');
 const logger = require('./shared/utils/logger');
@@ -11,15 +13,61 @@ const swaggerSpecs = require('./shared/config/swagger');
 // Importar rutas de módulos
 const roleRoutes = require('./modules/roles/routes/role.routes');
 const userRoutes = require('./modules/users/routes/user.routes');
+const authRoutes = require('./modules/users/routes/auth.routes');
 const postRoutes = require('./modules/posts/routes/post.routes');
 const invoiceRoutes = require('./modules/invoices/routes/invoice.routes');
 const contactRoutes = require('./modules/contacts/routes/contact.routes');
 const friendRequestRoutes = require('./modules/friendRequests/routes/friendRequest.routes');
+const messageRoutes = require('./modules/messages/routes/message.routes');
 
 const app = express();
 
 // Conectar a la base de datos
 connectDB();
+
+// Configuración de seguridad
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+  crossOriginEmbedderPolicy: false // Para permitir Swagger UI
+}));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 100, // Límite de 100 requests por IP cada 15 minutos
+  message: {
+    success: false,
+    message: 'Demasiadas peticiones desde esta IP, intenta nuevamente en 15 minutos.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Rate limiting más estricto para autenticación
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 5, // Solo 5 intentos de login por IP cada 15 minutos
+  message: {
+    success: false,
+    message: 'Demasiados intentos de login. Intenta nuevamente en 15 minutos.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Aplicar rate limiting general
+app.use(limiter);
+
+// Rate limiting específico para rutas de autenticación
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
 
 // Middleware global
 app.use(cors({
@@ -116,15 +164,26 @@ app.get('/', (req, res) => {
     documentation: '/api-docs',
     endpoints: {
       health: '/health',
+      auth: '/api/auth',
       roles: '/api/roles',
       users: '/api/users',
       posts: '/api/posts',
       invoices: '/api/invoices',
       contacts: '/api/contacts',
-      friendRequests: '/api/friend-requests'
+      friendRequests: '/api/friend-requests',
+      messages: '/api/messages'
     },
     endpointDetails: {
       health: 'GET /health',
+      auth: {
+        'POST /api/auth/register': 'Registrar nuevo usuario',
+        'POST /api/auth/login': 'Iniciar sesión',
+        'POST /api/auth/refresh': 'Refrescar token',
+        'POST /api/auth/logout': 'Cerrar sesión',
+        'GET /api/auth/me': 'Obtener perfil actual',
+        'PUT /api/auth/me': 'Actualizar perfil',
+        'PUT /api/auth/change-password': 'Cambiar contraseña'
+      },
       roles: {
         'GET /api/roles': 'Obtener todos los roles',
         'POST /api/roles': 'Crear nuevo rol',
@@ -137,6 +196,12 @@ app.get('/', (req, res) => {
         'GET /api/users': 'Obtener usuarios con paginación',
         'POST /api/users': 'Crear nuevo usuario',
         'GET /api/users/stats': 'Estadísticas de usuarios',
+        'GET /api/users/search': 'Buscar usuarios',
+        'GET /api/users/suggestions': 'Sugerencias de usuarios',
+        'GET /api/users/popular': 'Usuarios populares',
+        'GET /api/users/trending': 'Usuarios trending',
+        'GET /api/users/discover': 'Descubrir usuarios',
+        'GET /api/users/nearby': 'Usuarios cercanos',
         'GET /api/users/:id': 'Obtener usuario por ID',
         'GET /api/users/email/:email': 'Obtener usuario por email',
         'PUT /api/users/:id': 'Actualizar usuario',
@@ -185,18 +250,37 @@ app.get('/', (req, res) => {
         'PATCH /api/friend-requests/:id/accept': 'Aceptar solicitud',
         'PATCH /api/friend-requests/:id/reject': 'Rechazar solicitud',
         'DELETE /api/friend-requests/:id': 'Cancelar solicitud'
+      },
+      messages: {
+        'POST /api/messages/conversations/private': 'Iniciar conversación privada',
+        'POST /api/messages/conversations/group': 'Crear conversación grupal',
+        'GET /api/messages/conversations': 'Obtener conversaciones del usuario',
+        'GET /api/messages/conversations/:id/messages': 'Obtener mensajes de conversación',
+        'POST /api/messages/conversations/:id/messages': 'Enviar mensaje',
+        'PUT /api/messages/conversations/:id/read': 'Marcar mensajes como leídos',
+        'GET /api/messages/conversations/:id/search': 'Buscar mensajes en conversación',
+        'PUT /api/messages/conversations/:id/mute': 'Silenciar/Desilenciar conversación',
+        'GET /api/messages/unread': 'Obtener mensajes no leídos',
+        'GET /api/messages/unread/count': 'Contar mensajes no leídos',
+        'GET /api/messages/stats': 'Estadísticas de mensajería',
+        'PUT /api/messages/:id': 'Editar mensaje',
+        'DELETE /api/messages/:id': 'Eliminar mensaje',
+        'POST /api/messages/:id/reactions': 'Agregar reacción a mensaje',
+        'DELETE /api/messages/:id/reactions': 'Remover reacción de mensaje'
       }
     }
   });
 });
 
 // Rutas de la API
+app.use('/api/auth', authRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/contacts', contactRoutes);
 app.use('/api/friend-requests', friendRequestRoutes);
+app.use('/api/messages', messageRoutes);
 
 // Middleware de manejo de errores
 app.use(errorMiddleware);
@@ -210,12 +294,14 @@ app.use((req, res) => {
       'GET /',
       'GET /health',
       'GET /api-docs',
+      '/api/auth',
       '/api/roles',
       '/api/users',
       '/api/posts',
       '/api/invoices',
       '/api/contacts',
-      '/api/friend-requests'
+      '/api/friend-requests',
+      '/api/messages'
     ]
   });
 });
@@ -243,12 +329,14 @@ app.listen(PORT, () => {
 📊 Endpoints disponibles:
   • Documentación: http://localhost:${PORT}/api-docs
   • Health: http://localhost:${PORT}/health
+  • Autenticación: http://localhost:${PORT}/api/auth
   • Roles: http://localhost:${PORT}/api/roles
   • Usuarios: http://localhost:${PORT}/api/users  
   • Posts: http://localhost:${PORT}/api/posts
   • Facturas: http://localhost:${PORT}/api/invoices
   • Contactos: http://localhost:${PORT}/api/contacts
   • Solicitudes: http://localhost:${PORT}/api/friend-requests
+  • Mensajería: http://localhost:${PORT}/api/messages
   `);
 });
 

@@ -1,7 +1,12 @@
 const express = require('express');
 const userController = require('../controllers/user.controller');
+const userSearchController = require('../controllers/user-search.controller');
+const { authMiddleware, optionalAuthMiddleware } = require('../../../shared/middleware/auth.middleware');
 
 const router = express.Router();
+
+// Importar rutas de métricas
+const userMetricsRoutes = require('./user-metrics.routes');
 
 /**
  * @swagger
@@ -424,5 +429,178 @@ router.put('/:id', userController.updateUser);
  *               $ref: '#/components/schemas/Error'
  */
 router.delete('/:id', userController.deleteUser);
+
+// Rutas de búsqueda y descubrimiento
+/**
+ * @swagger
+ * /api/users/search:
+ *   get:
+ *     summary: Buscar usuarios
+ *     description: Busca usuarios por nombre, apellido o email
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         schema:
+ *           type: string
+ *         description: Término de búsqueda
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Número máximo de resultados
+ *       - in: query
+ *         name: skip
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *         description: Número de resultados a omitir
+ *       - in: query
+ *         name: excludeFollowing
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Excluir usuarios ya seguidos
+ *       - in: query
+ *         name: onlyFollowing
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Solo mostrar usuarios seguidos
+ *     responses:
+ *       200:
+ *         description: Resultados de búsqueda
+ */
+router.get('/search', optionalAuthMiddleware, userSearchController.searchUsers);
+
+/**
+ * @swagger
+ * /api/users/suggestions:
+ *   get:
+ *     summary: Obtener sugerencias de usuarios
+ *     description: Obtiene sugerencias de usuarios para seguir basadas en conexiones mutuas
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Número máximo de sugerencias
+ *     responses:
+ *       200:
+ *         description: Sugerencias de usuarios
+ */
+router.get('/suggestions', authMiddleware, userSearchController.getUserSuggestions);
+
+/**
+ * @swagger
+ * /api/users/popular:
+ *   get:
+ *     summary: Obtener usuarios populares
+ *     description: Obtiene usuarios con más seguidores
+ *     tags: [Users]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Número máximo de usuarios
+ *     responses:
+ *       200:
+ *         description: Usuarios populares
+ */
+router.get('/popular', optionalAuthMiddleware, userSearchController.getPopularUsers);
+
+/**
+ * @swagger
+ * /api/users/trending:
+ *   get:
+ *     summary: Obtener usuarios trending
+ *     description: Obtiene usuarios más activos recientemente
+ *     tags: [Users]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Número máximo de usuarios
+ *     responses:
+ *       200:
+ *         description: Usuarios trending
+ */
+router.get('/trending', optionalAuthMiddleware, userSearchController.getTrendingUsers);
+
+/**
+ * @swagger
+ * /api/users/discover:
+ *   get:
+ *     summary: Descubrir usuarios
+ *     description: Combina diferentes criterios para descubrir usuarios interesantes
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: Número máximo de usuarios
+ *     responses:
+ *       200:
+ *         description: Usuarios para descubrir
+ */
+router.get('/discover', optionalAuthMiddleware, userSearchController.discoverUsers);
+
+/**
+ * @swagger
+ * /api/users/nearby:
+ *   get:
+ *     summary: Buscar usuarios cercanos
+ *     description: Busca usuarios por proximidad geográfica
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: lat
+ *         required: true
+ *         schema:
+ *           type: number
+ *         description: Latitud
+ *       - in: query
+ *         name: lng
+ *         required: true
+ *         schema:
+ *           type: number
+ *         description: Longitud
+ *       - in: query
+ *         name: radius
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *         description: Radio de búsqueda en km
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Número máximo de usuarios
+ *     responses:
+ *       200:
+ *         description: Usuarios cercanos
+ */
+router.get('/nearby', optionalAuthMiddleware, userSearchController.searchNearbyUsers);
+
+// Rutas de métricas de usuario
+router.use('/', userMetricsRoutes);
 
 module.exports = router; 

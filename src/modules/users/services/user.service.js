@@ -1,5 +1,6 @@
 const User = require('../models/user.model');
 const Role = require('../../roles/models/role.model');
+const jwtService = require('../../../shared/utils/jwt');
 const { validateCreateUser } = require('../dtos/create-user.dto');
 const { validateUpdateUser } = require('../dtos/update-user.dto');
 
@@ -25,17 +26,22 @@ class UserService {
         throw new Error('Credenciales inválidas');
       }
 
+      // Generar tokens JWT
+      const tokens = jwtService.generateTokens(user);
+
       // Actualizar último login
       user.lastLogin = new Date();
       await user.save();
 
-      // Retornar usuario sin password y datos de autenticación
+      // Retornar usuario sin password y tokens de autenticación
       const userResponse = user.toJSON();
       
       return {
         user: userResponse,
-        // TODO: Implementar JWT token si es necesario
-        // token: generateJWT(user._id)
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+        tokenType: 'Bearer',
         message: 'Autenticación exitosa'
       };
     } catch (error) {

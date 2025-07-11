@@ -1,5 +1,7 @@
 const Post = require('../models/post.model');
 const User = require('../../users/models/user.model');
+const Contact = require('../../contacts/models/contact.model');
+const cloudinary = require('../../../shared/config/cloudinary');
 
 class PostService {
   
@@ -119,7 +121,35 @@ class PostService {
         throw new Error('No tienes permisos para editar este post');
       }
 
-      // Actualizar post
+      // Manejar archivos multimedia
+      if (updateData.media) {
+        // Agregar nuevos archivos a los existentes
+        post.media = post.media.concat(updateData.media);
+        delete updateData.media;
+      }
+
+      // Manejar eliminación de archivos específicos
+      if (updateData.filesToDelete && Array.isArray(updateData.filesToDelete)) {
+        for (const fileId of updateData.filesToDelete) {
+          const mediaIndex = post.media.findIndex(m => m._id.toString() === fileId);
+          if (mediaIndex !== -1) {
+            const mediaItem = post.media[mediaIndex];
+            // Eliminar de Cloudinary
+            if (mediaItem.cloudinaryId) {
+              try {
+                await cloudinary.uploader.destroy(mediaItem.cloudinaryId);
+              } catch (cloudinaryError) {
+                console.error('Error al eliminar archivo de Cloudinary:', cloudinaryError);
+              }
+            }
+            // Eliminar del array
+            post.media.splice(mediaIndex, 1);
+          }
+        }
+        delete updateData.filesToDelete;
+      }
+
+      // Actualizar resto de datos
       Object.assign(post, updateData);
       await post.save();
       
@@ -147,6 +177,19 @@ class PostService {
 
       if (!canDelete) {
         throw new Error('No tienes permisos para eliminar este post');
+      }
+
+      // Eliminar archivos multimedia de Cloudinary
+      if (post.media && post.media.length > 0) {
+        for (const mediaItem of post.media) {
+          if (mediaItem.cloudinaryId) {
+            try {
+              await cloudinary.uploader.destroy(mediaItem.cloudinaryId);
+            } catch (cloudinaryError) {
+              console.error('Error al eliminar archivo de Cloudinary:', cloudinaryError);
+            }
+          }
+        }
       }
 
       await Post.findByIdAndDelete(postId);
@@ -209,15 +252,286 @@ class PostService {
   }
 
   /**
-   * Obtener feed de posts
+   * Obtener feed inteligente de posts
    */
   async getFeed(userId, options = {}) {
     try {
-      const { limit = 10, skip = 0 } = options;
-      
-      // Por ahora retorna todos los posts ordenados por fecha
-      // En futuras versiones se puede implementar algoritmo de feed personalizado
-      const posts = await Post.getFeedPosts(limit, skip);
+      const { 
+        limit = 10, 
+        skip = 0, 
+        feedType = 'following', // 'following', 'discover', 'trending'
+        includeOwnPosts = true 
+      } = options;
+
+      let query = {};
+      let posts = [];
+
+      switch (feedType) {
+        case 'following':
+          posts = await this.getFollowingFeed(userId, limit, skip, includeOwnPosts);
+          break;
+        case 'discover':
+          posts = await this.getDiscoverFeed(userId, limit, skip);
+          break;
+        case 'trending':
+          posts = await this.getTrendingFeed(limit, skip);
+          break;
+        default:
+          posts = await this.getFollowingFeed(userId, limit, skip, includeOwnPosts);
+      }
+
+      return posts;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Feed de usuarios seguidos
+   */
+  async getFollowingFeed(userId, limit, skip, includeOwnPosts) {
+    try {
+      // Obtener usuarios seguidos
+      const following = await Contact.find({ followerId: userId }).select('followeeId');
+      const followingIds = following.map(f => f.followeeId);
+
+      // Incluir posts propios si está habilitado
+      if (includeOwnPosts) {
+        followingIds.push(userId);
+      }
+
+      // Si no sigue a nadie y no incluye posts propios, devolver array vacío
+      if (followingIds.length === 0) {
+        return [];
+      }
+
+      // Obtener posts con score de relevancia
+      const posts = await Post.aggregate([
+        {
+          $match: {
+            authorId: { $in: followingIds }
+          }
+        },
+        {
+          $addFields: {
+            // Calcular score de relevancia
+            relevanceScore: {
+              $add: [
+                // Score por fecha (más reciente = más score)
+                {
+                  $multiply: [
+                    {
+                      $divide: [
+                        { $subtract: [new Date(), '$createdAt'] },
+                        86400000 // 24 horas en ms
+                      ]
+                    },
+                    -0.1 // Penalización por antigüedad
+                  ]
+                },
+                // Score por engagement
+                {
+                  $multiply: [
+                    { $add: [{ $size: '$reactions' }, { $size: '$comments' }] },
+                    0.5
+                  ]
+                },
+                // Bonus para posts con archivos multimedia
+                {
+                  $cond: [
+                    { $gt: [{ $size: '$media' }, 0] },
+                    2,
+                    0
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          $sort: { relevanceScore: -1, createdAt: -1 }
+        },
+        {
+          $skip: skip
+        },
+        {
+          $limit: limit
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'authorId',
+            foreignField: '_id',
+            as: 'author',
+            pipeline: [{ $project: { firstName: 1, lastName: 1, email: 1 } }]
+          }
+        },
+        {
+          $lookup: {
+            from: 'invoices',
+            localField: 'invoiceId',
+            foreignField: '_id',
+            as: 'invoice',
+            pipeline: [{ $project: { code: 1, total: 1, status: 1, company: 1 } }]
+          }
+        },
+        {
+          $addFields: {
+            authorId: { $arrayElemAt: ['$author', 0] },
+            invoiceId: { $arrayElemAt: ['$invoice', 0] }
+          }
+        },
+        {
+          $unset: ['author', 'invoice']
+        }
+      ]);
+
+      return posts;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Feed de descubrimiento (usuarios no seguidos)
+   */
+  async getDiscoverFeed(userId, limit, skip) {
+    try {
+      // Obtener usuarios seguidos para excluirlos
+      const following = await Contact.find({ followerId: userId }).select('followeeId');
+      const followingIds = following.map(f => f.followeeId);
+      followingIds.push(userId); // Excluir posts propios también
+
+      const posts = await Post.aggregate([
+        {
+          $match: {
+            authorId: { $nin: followingIds }
+          }
+        },
+        {
+          $addFields: {
+            // Score basado en engagement reciente
+            discoverScore: {
+              $add: [
+                // Posts con más reacciones
+                { $multiply: [{ $size: '$reactions' }, 2] },
+                // Posts con más comentarios
+                { $multiply: [{ $size: '$comments' }, 3] },
+                // Penalización por antigüedad
+                {
+                  $multiply: [
+                    {
+                      $divide: [
+                        { $subtract: [new Date(), '$createdAt'] },
+                        86400000 // 24 horas
+                      ]
+                    },
+                    -0.2
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          $sort: { discoverScore: -1, createdAt: -1 }
+        },
+        {
+          $skip: skip
+        },
+        {
+          $limit: limit
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'authorId',
+            foreignField: '_id',
+            as: 'author',
+            pipeline: [{ $project: { firstName: 1, lastName: 1, email: 1 } }]
+          }
+        },
+        {
+          $addFields: {
+            authorId: { $arrayElemAt: ['$author', 0] }
+          }
+        },
+        {
+          $unset: ['author']
+        }
+      ]);
+
+      return posts;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Feed de tendencias (posts más populares)
+   */
+  async getTrendingFeed(limit, skip) {
+    try {
+      const posts = await Post.aggregate([
+        {
+          $addFields: {
+            // Score de tendencia basado en engagement en las últimas 24 horas
+            trendingScore: {
+              $add: [
+                // Peso por reacciones
+                { $multiply: [{ $size: '$reactions' }, 3] },
+                // Peso por comentarios
+                { $multiply: [{ $size: '$comments' }, 5] },
+                // Bonus por posts recientes (últimas 24 horas)
+                {
+                  $cond: [
+                    {
+                      $gte: [
+                        '$createdAt',
+                        { $subtract: [new Date(), 86400000] } // 24 horas atrás
+                      ]
+                    },
+                    10, // Bonus de 10 puntos
+                    0
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          $match: {
+            trendingScore: { $gt: 0 } // Solo posts con algún engagement
+          }
+        },
+        {
+          $sort: { trendingScore: -1, createdAt: -1 }
+        },
+        {
+          $skip: skip
+        },
+        {
+          $limit: limit
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'authorId',
+            foreignField: '_id',
+            as: 'author',
+            pipeline: [{ $project: { firstName: 1, lastName: 1, email: 1 } }]
+          }
+        },
+        {
+          $addFields: {
+            authorId: { $arrayElemAt: ['$author', 0] }
+          }
+        },
+        {
+          $unset: ['author']
+        }
+      ]);
+
       return posts;
     } catch (error) {
       throw error;
@@ -253,6 +567,49 @@ class PostService {
           return acc;
         }, {})
       };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Eliminar archivo multimedia específico
+   */
+  async deleteMedia(postId, mediaId, userId) {
+    try {
+      const post = await Post.findById(postId);
+      if (!post) {
+        throw new Error('Post no encontrado');
+      }
+
+      // Verificar que el usuario es el autor del post
+      if (!post.authorId.equals(userId)) {
+        throw new Error('No tienes permisos para eliminar archivos de este post');
+      }
+
+      // Buscar el archivo en la lista de media
+      const mediaIndex = post.media.findIndex(m => m._id.toString() === mediaId);
+      if (mediaIndex === -1) {
+        throw new Error('Archivo no encontrado');
+      }
+
+      const mediaItem = post.media[mediaIndex];
+
+      // Eliminar archivo de Cloudinary
+      if (mediaItem.cloudinaryId) {
+        try {
+          await cloudinary.uploader.destroy(mediaItem.cloudinaryId);
+        } catch (cloudinaryError) {
+          console.error('Error al eliminar archivo de Cloudinary:', cloudinaryError);
+          // Continuamos con la eliminación del post aunque falle Cloudinary
+        }
+      }
+
+      // Eliminar archivo del array de media
+      post.media.splice(mediaIndex, 1);
+      await post.save();
+
+      return { message: 'Archivo eliminado correctamente' };
     } catch (error) {
       throw error;
     }

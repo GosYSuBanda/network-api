@@ -62,14 +62,54 @@ const postSchema = new mongoose.Schema({
     enum: ['general', 'financial', 'invoice', 'question', 'announcement'],
     default: 'general'
   },
+  // Referencia a factura (opcional)
   invoiceId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Invoice',
-    required: false // Opcional
-  },
-  images: [{
-    type: Buffer,
     required: false
+  },
+
+  // Información empresarial para posts de facturas
+  businessInfo: {
+    companyName: { type: String, trim: true },
+    companyRuc: { type: String, trim: true },
+    invoiceCode: { type: String, trim: true },
+    invoiceTotal: { type: Number, min: 0 },
+    invoiceStatus: { 
+      type: String, 
+      enum: ['pending', 'paid', 'overdue', 'cancelled'],
+      default: 'pending'
+    },
+    issuedAt: { type: Date },
+    paidAt: { type: Date }
+  },
+
+  // Tags para categorización
+  tags: {
+    type: [String],
+    default: []
+  },
+
+  // Categoría del post
+  category: {
+    type: String,
+    enum: ['general', 'alto-valor', 'medio-valor', 'bajo-valor', 'urgente'],
+    default: 'general'
+  },
+
+  // Multimedia con metadatos completos
+  media: [{
+    url: { type: String, required: true },
+    publicId: { type: String, required: true },
+    cloudinaryId: { type: String, required: true },
+    originalName: { type: String, required: true },
+    mimeType: { type: String, required: true },
+    size: { type: Number, required: true },
+    width: { type: Number },
+    height: { type: Number },
+    format: { type: String },
+    resourceType: { type: String, enum: ['image', 'video', 'raw'], required: true },
+    uploadedAt: { type: Date, default: Date.now }
   }],
   reactions: [reactionSchema],
   comments: [commentSchema]
@@ -79,10 +119,21 @@ const postSchema = new mongoose.Schema({
 });
 
 // Índices
-postSchema.index({ authorId: 1 });
-postSchema.index({ postType: 1 });
+postSchema.index({ authorId: 1, createdAt: -1 });
+postSchema.index({ postType: 1, createdAt: -1 });
 postSchema.index({ createdAt: -1 });
-postSchema.index({ invoiceId: 1 });
+postSchema.index({ 'reactions.userId': 1 });
+postSchema.index({ 'comments.userId': 1 });
+
+// Índices para posts empresariales
+postSchema.index({ 'businessInfo.companyRuc': 1 });
+postSchema.index({ 'businessInfo.invoiceStatus': 1 });
+postSchema.index({ 'businessInfo.issuedAt': -1 });
+postSchema.index({ 'businessInfo.invoiceTotal': -1 });
+postSchema.index({ tags: 1 });
+postSchema.index({ category: 1 });
+postSchema.index({ postType: 1, category: 1 });
+postSchema.index({ 'businessInfo.companyRuc': 1, 'businessInfo.invoiceStatus': 1 });
 
 // Virtual para contar reacciones
 postSchema.virtual('reactionCount').get(function() {
